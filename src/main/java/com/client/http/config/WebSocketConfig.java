@@ -3,6 +3,7 @@ package com.client.http.config;
 import com.client.http.components.CustomFrameHandler;
 import com.client.http.utils.AppProperties;
 import com.paicbd.smsc.dto.UtilsRecords;
+import com.paicbd.smsc.utils.Generated;
 import com.paicbd.smsc.ws.SocketClient;
 import com.paicbd.smsc.ws.SocketSession;
 import lombok.RequiredArgsConstructor;
@@ -17,11 +18,11 @@ import static com.client.http.utils.Constants.CONNECT_GATEWAY_ENDPOINT;
 import static com.client.http.utils.Constants.STOP_GATEWAY_ENDPOINT;
 import static com.client.http.utils.Constants.DELETE_GATEWAY_ENDPOINT;
 import static com.client.http.utils.Constants.UPDATE_ERROR_CODE_MAPPING_ENDPOINT;
-import static com.client.http.utils.Constants.UPDATE_SERVICE_PROVIDER_ENDPOINT;
 import static com.client.http.utils.Constants.UPDATE_ROUTING_RULES_ENDPOINT;
 import static com.client.http.utils.Constants.DELETE_ROUTING_RULES_ENDPOINT;
 
 @Slf4j
+@Generated
 @Configuration
 @RequiredArgsConstructor
 public class WebSocketConfig {
@@ -37,7 +38,6 @@ public class WebSocketConfig {
                 STOP_GATEWAY_ENDPOINT,
                 DELETE_GATEWAY_ENDPOINT,
                 UPDATE_ERROR_CODE_MAPPING_ENDPOINT,
-                UPDATE_SERVICE_PROVIDER_ENDPOINT,
                 UPDATE_ROUTING_RULES_ENDPOINT,
                 DELETE_ROUTING_RULES_ENDPOINT
         );

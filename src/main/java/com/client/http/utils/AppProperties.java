@@ -1,12 +1,14 @@
 package com.client.http.utils;
 
 import lombok.Getter;
-import org.springframework.beans.factory.annotation.Value;
+import com.paicbd.smsc.utils.Generated;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.List;
 
 @Getter
+@Generated
 @Component
 public class AppProperties {
     // Redis
