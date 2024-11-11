@@ -100,7 +100,7 @@ public class GatewayHttpConnection {
         log.info("Connected to Gateway {}", this.gateway.getName());
         this.gateway.setStatus("STARTED");
         this.gateway.setEnabled(1);
-        jedisCluster.hset(this.appProperties.getKeyGatewayRedis(), gateway.getSystemId(), this.gateway.toString());
+        jedisCluster.hset(this.appProperties.getKeyGatewayRedis(), String.valueOf(gateway.getNetworkId()), this.gateway.toString());
     }
 
     public Flux<List<String>> fetchAllItems() {
@@ -227,9 +227,8 @@ public class GatewayHttpConnection {
         };
     }
 
-    public void handlingLastRetry(MessageEvent submitSmEvent, int errorCode) {
-        log.info("Last retry for submit_sm with id {}, the message will be sent to DLR", submitSmEvent.getMessageId());
-        handlerCdrDetail(submitSmEvent, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.FAILED, cdrProcessor, true, "VALIDITY PERIOD WILL BE EXCEEDED FOR NEXT RETRY");
+    public void handlingErrorOnSendMessage(MessageEvent submitSmEvent, int errorCode, String message) {
+        handlerCdrDetail(submitSmEvent, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.FAILED, cdrProcessor, true, message);
         sendDeliverSm(submitSmEvent, errorCode);
     }
 
@@ -365,24 +364,33 @@ public class GatewayHttpConnection {
                 service.execute(() -> addInCache(submitSmEvent, response));
                 handlerCdrDetail(submitSmEvent, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.SENT, cdrProcessor, true, "Sent to GW");
             } else {
-                if (submitSmEvent.isLastRetry()) {
-                    handlingLastRetry(submitSmEvent, response.statusCode());
-                    return;
-                }
-                sendToRetryProcess(submitSmEvent, response.statusCode());
+                globalErrorHandler(submitSmEvent, response.statusCode());
             }
         } catch (HttpTimeoutException e) {
             log.error("An exception occurred trying to send http request due to HttpTimeoutException -> {}", e.getMessage());
-            if (submitSmEvent.isLastRetry()) {
-                handlingLastRetry(submitSmEvent, 408);
-                return;
-            }
-            sendToRetryProcess(submitSmEvent, 408);
+            globalErrorHandler(submitSmEvent, 408);
         } catch (IOException | InterruptedException e) {
             log.error("An exception occurred trying to send http request -> {}", e.getMessage());
             handlerCdrDetail(submitSmEvent, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.FAILED, cdrProcessor, true, "AN EXCEPTION OCCURRED TRYING TO SEND HTTP REQUEST");
+            sendDeliverSm(submitSmEvent, 500);
             Thread.currentThread().interrupt();
         }
+    }
+
+    public void globalErrorHandler(MessageEvent submitSmEvent, int errorCode) {
+        if (submitSmEvent.getValidityPeriod() == 0) {
+            log.debug("The validity period for submit_sm with id {} is 0, the message will be sent to DLR", submitSmEvent.getMessageId());
+            handlingErrorOnSendMessage(submitSmEvent, errorCode, "VALIDITY PERIOD IS 0");
+            return;
+        }
+
+        if (submitSmEvent.isLastRetry()) {
+            log.debug("Last retry for submit_sm with id {}, the message will be sent to DLR", submitSmEvent.getMessageId());
+            handlingErrorOnSendMessage(submitSmEvent, errorCode, "VALIDITY PERIOD WILL BE EXCEEDED FOR NEXT RETRY");
+            return;
+        }
+
+        sendToRetryProcess(submitSmEvent, errorCode);
     }
 
     private String messageEventToRequest(MessageEvent messageEvent) {
@@ -397,7 +405,8 @@ public class GatewayHttpConnection {
                 messageEvent.getRegisteredDelivery(),
                 messageEvent.getDataCoding(),
                 messageEvent.getShortMessage(),
-                messageEvent.getOptionalParameters()
+                messageEvent.getOptionalParameters(),
+                messageEvent.getCustomParams()
         );
         return messageRequest.toString();
     }
@@ -408,7 +417,7 @@ public class GatewayHttpConnection {
         });
         if (submitSmEvent.getRegisteredDelivery() != 0) {
             if (responseMap.containsKey("message_id")) {
-                var id = responseMap.get("message_id").toString();
+                var id = responseMap.get("message_id").toString().toUpperCase();
                 log.debug("Requesting DLR for submit_sm with id {} and messageId {}", submitSmEvent.getId(), id);
                 SubmitSmResponseEvent submitSmResponseEvent = new SubmitSmResponseEvent();
                 submitSmResponseEvent.setHashId(id);
