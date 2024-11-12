@@ -15,7 +15,6 @@ import static com.client.http.utils.Constants.CONNECT_GATEWAY_ENDPOINT;
 import static com.client.http.utils.Constants.STOP_GATEWAY_ENDPOINT;
 import static com.client.http.utils.Constants.DELETE_GATEWAY_ENDPOINT;
 import static com.client.http.utils.Constants.UPDATE_ERROR_CODE_MAPPING_ENDPOINT;
-import static com.client.http.utils.Constants.UPDATE_SERVICE_PROVIDER_ENDPOINT;
 import static com.client.http.utils.Constants.UPDATE_ROUTING_RULES_ENDPOINT;
 import static com.client.http.utils.Constants.DELETE_ROUTING_RULES_ENDPOINT;
 import static com.client.http.utils.Constants.RESPONSE_SMPP_CLIENT_ENDPOINT;
@@ -29,21 +28,25 @@ public class CustomFrameHandler implements FrameHandler  {
 
     @Override
     public void handleFrameLogic(StompHeaders headers, Object payload) {
-        String systemId = payload.toString();
-        String destination = headers.getDestination();
-        Objects.requireNonNull(systemId, "System ID cannot be null");
-        Objects.requireNonNull(destination, "Destination cannot be null");
+        String key = payload.toString();
+        try {
+            Integer.parseInt(key);
+            String destination = headers.getDestination();
+            Objects.requireNonNull(key, "The payload data cannot be null");
+            Objects.requireNonNull(destination, "Destination cannot be null");
 
-        switch (destination) {
-            case UPDATE_GATEWAY_ENDPOINT -> handleUpdate(systemId, this::handleUpdateGateway);
-            case CONNECT_GATEWAY_ENDPOINT -> handleUpdate(systemId, this::handleConnectGateway);
-            case STOP_GATEWAY_ENDPOINT -> handleUpdate(systemId, this::handleStopGateway);
-            case DELETE_GATEWAY_ENDPOINT -> handleUpdate(systemId, this::handleDeleteGateway);
-            case UPDATE_ERROR_CODE_MAPPING_ENDPOINT -> handleUpdate(systemId, this::handleUpdateErrorCodeMapping);
-            case UPDATE_SERVICE_PROVIDER_ENDPOINT -> handleUpdate(systemId, this::handleUpdateServiceProvider);
-            case UPDATE_ROUTING_RULES_ENDPOINT -> handleUpdate(systemId, this::handleUpdateRoutingRules);
-            case DELETE_ROUTING_RULES_ENDPOINT -> handleUpdate(systemId, this::handleDeleteRoutingRules);
-            default -> log.warn("Unknown destination: {}", destination);
+            switch (destination) {
+                case UPDATE_GATEWAY_ENDPOINT -> handleUpdate(key, this::handleUpdateGateway);
+                case CONNECT_GATEWAY_ENDPOINT -> handleUpdate(key, this::handleConnectGateway);
+                case STOP_GATEWAY_ENDPOINT -> handleUpdate(key, this::handleStopGateway);
+                case DELETE_GATEWAY_ENDPOINT -> handleUpdate(key, this::handleDeleteGateway);
+                case UPDATE_ERROR_CODE_MAPPING_ENDPOINT -> handleUpdate(key, this::handleUpdateErrorCodeMapping);
+                case UPDATE_ROUTING_RULES_ENDPOINT -> handleUpdate(key, this::handleUpdateRoutingRules);
+                case DELETE_ROUTING_RULES_ENDPOINT -> handleUpdate(key, this::handleDeleteRoutingRules);
+                default -> log.warn("Unknown destination: {}", destination);
+            }
+        } catch (NumberFormatException ex) {
+            log.error("The requested payload does not contains a valid Network ID , provided value : {} ", key);
         }
     }
 
@@ -52,34 +55,29 @@ public class CustomFrameHandler implements FrameHandler  {
         socketSession.getStompSession().send(RESPONSE_SMPP_CLIENT_ENDPOINT, "OK");
     }
 
-    private void handleUpdateGateway(String systemId) {
-        log.info("Updating gateway {}", systemId);
-        httpClientManager.updateGateway(systemId);
+    private void handleUpdateGateway(String stringNetworkId) {
+        log.info("Updating gateway {}", stringNetworkId);
+        httpClientManager.updateGateway(stringNetworkId);
     }
 
-    private void handleConnectGateway(String systemId) {
-        log.info("Connecting gateway {}", systemId);
-        httpClientManager.connectGateway(systemId);
+    private void handleConnectGateway(String stringNetworkId) {
+        log.info("Connecting gateway {}", stringNetworkId);
+        httpClientManager.connectGateway(stringNetworkId);
     }
 
-    private void handleStopGateway(String systemId) {
-        log.info("Stopping gateway {}", systemId);
-        httpClientManager.stopGateway(systemId);
+    private void handleStopGateway(String stringNetworkId) {
+        log.info("Stopping gateway {}", stringNetworkId);
+        httpClientManager.stopGateway(stringNetworkId);
     }
 
-    private void handleDeleteGateway(String systemId) {
-        log.info("Deleting gateway {}", systemId);
-        httpClientManager.deleteGateway(systemId);
+    private void handleDeleteGateway(String stringNetworkId) {
+        log.info("Deleting gateway {}", stringNetworkId);
+        httpClientManager.deleteGateway(stringNetworkId);
     }
 
     private void handleUpdateErrorCodeMapping(String systemId) {
         log.info("Updating error code mapping for mno_id {}", systemId);
         httpClientManager.updateErrorCodeMapping(systemId);
-    }
-
-    private void handleUpdateServiceProvider(String systemId) {
-        log.info("Updating service provider {}", systemId);
-        httpClientManager.updateServiceProvider(systemId);
     }
 
     private void handleUpdateRoutingRules(String systemId) {
