@@ -50,8 +50,8 @@ public class HttpClientManager {
             }
 
             gatewaysMaps.values().forEach(gatewayInRaw -> {
-                Gateway gateway = Converter.stringToObject(gatewayInRaw, new TypeReference<>() {
-                });
+                Gateway gateway = Converter.stringToObject(gatewayInRaw, Gateway.class);
+                Objects.requireNonNull(gateway);
                 if ("HTTP".equalsIgnoreCase(gateway.getProtocol())) {
                     GatewayHttpConnection gatewayHttpConnection = new GatewayHttpConnection(
                             appProperties, jedisCluster, gateway,
@@ -75,8 +75,8 @@ public class HttpClientManager {
                 log.warn("No gateway found for networkId {} on updateGateway", stringNetworkId);
                 return;
             }
-            Gateway gateway = Converter.stringToObject(gatewayInRaw, new TypeReference<>() {
-            });
+            Gateway gateway = Converter.stringToObject(gatewayInRaw, Gateway.class);
+            Objects.requireNonNull(gateway);
             if (!"HTTP".equalsIgnoreCase(gateway.getProtocol())) {
                 log.warn("This gateway {} is not handled by this application. Failed to update", stringNetworkId);
                 return;
