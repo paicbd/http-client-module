@@ -1,13 +1,18 @@
 package com.client.http.http;
 
 import com.client.http.utils.AppProperties;
+import com.client.http.utils.Constants;
 import com.paicbd.smsc.cdr.CdrProcessor;
 import com.paicbd.smsc.dto.ErrorCodeMapping;
 import com.paicbd.smsc.dto.Gateway;
 import com.paicbd.smsc.dto.RoutingRule;
+import com.paicbd.smsc.utils.Converter;
+import com.paicbd.smsc.utils.RequestDelivery;
 import com.paicbd.smsc.ws.SocketSession;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -18,275 +23,485 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class HttpClientManagerTest {
     @Mock
     JedisCluster jedisCluster;
+
     @Mock
     AppProperties appProperties;
+
     @Mock
     SocketSession socketSession;
+
     @Mock
     ConcurrentMap<String, GatewayHttpConnection> httpConnectionManagerList;
+
     @Mock
     ConcurrentMap<String, List<ErrorCodeMapping>> errorCodeMappingConcurrentHashMap;
+
     @Mock
     ConcurrentMap<Integer, List<RoutingRule>> routingHashMap;
+
     @Mock
     CdrProcessor cdrProcessor;
 
     @InjectMocks
     HttpClientManager httpClientManager;
 
-    static Map<String, String> connectionManagerMockBatch = Map.of(
-            "4", "{\"name\":\"Receiver\",\"password\":\"1234\",\"ip\":\"192.168.100.18\",\"port\":2778,\"tps\":1,\"network_id\":4,\"system_id\":\"gw1\",\"bind_type\":\"RECEIVER\",\"system_type\":\"\",\"interface_version\":\"IF_50\",\"sessions_number\":1,\"address_ton\":0,\"address_npi\":0,\"address_range\":\"\",\"enabled\":0,\"enquire_link_period\":30000,\"request_dlr\":true,\"no_retry_error_code\":\"\",\"retry_alternate_destination_error_code\":\"\",\"bind_timeout\":5000,\"bind_retry_period\":10000,\"pdu_timeout\":5000,\"pdu_degree\":1,\"thread_pool_size\":100,\"mno_id\":1,\"status\":\"BOUND\",\"active_sessions_numbers\":1,\"enquire_link_timeout\":0,\"tlv_message_receipt_id\":false,\"message_id_decimal_format\":false,\"protocol\":\"SMPP\",\"auto_retry_error_code\":\"\",\"encoding_iso88591\":3,\"encoding_gsm7\":0,\"encoding_ucs2\":2,\"split_message\":false,\"split_smpp_type\":\"TLV\"}",
-            "7", "{\"network_id\":7,\"name\":\"httpgw\",\"system_id\":\"httpgw\",\"password\":\"\",\"ip\":\"http://192.168.100.18:9409/gw\",\"port\":0,\"bind_type\":\"TRANSCEIVER\",\"system_type\":\"\",\"interface_version\":\"IF_50\",\"sessions_number\":1,\"address_ton\":0,\"address_npi\":0,\"address_range\":\"\",\"tps\":1,\"status\":\"STARTED\",\"enabled\":1,\"enquire_link_period\":30000,\"enquire_link_timeout\":0,\"request_dlr\":false,\"no_retry_error_code\":\"\",\"retry_alternate_destination_error_code\":\"\",\"bind_timeout\":5000,\"bind_retry_period\":10000,\"pdu_timeout\":5000,\"pdu_degree\":1,\"thread_pool_size\":100,\"mno_id\":1,\"tlv_message_receipt_id\":false,\"message_id_decimal_format\":false,\"active_sessions_numbers\":0,\"protocol\":\"HTTP\",\"auto_retry_error_code\":\"\",\"encoding_iso88591\":1,\"encoding_gsm7\":1,\"encoding_ucs2\":1,\"split_message\":false,\"split_smpp_type\":\"TLV\"}",
-            "3", "{\"name\":\"Transmitter\",\"password\":\"1234\",\"ip\":\"192.168.100.18\",\"port\":2778,\"tps\":1,\"network_id\":3,\"system_id\":\"gw1\",\"bind_type\":\"TRANSMITTER\",\"system_type\":\"\",\"interface_version\":\"IF_50\",\"sessions_number\":1,\"address_ton\":0,\"address_npi\":0,\"address_range\":\"\",\"enabled\":0,\"enquire_link_period\":30000,\"request_dlr\":false,\"no_retry_error_code\":\"\",\"retry_alternate_destination_error_code\":\"\",\"bind_timeout\":5000,\"bind_retry_period\":10000,\"pdu_timeout\":5000,\"pdu_degree\":1,\"thread_pool_size\":100,\"mno_id\":1,\"status\":\"BOUND\",\"active_sessions_numbers\":1,\"enquire_link_timeout\":0,\"tlv_message_receipt_id\":false,\"message_id_decimal_format\":false,\"protocol\":\"SMPP\",\"auto_retry_error_code\":\"\",\"encoding_iso88591\":3,\"encoding_gsm7\":0,\"encoding_ucs2\":2,\"split_message\":true,\"split_smpp_type\":\"TLV\"}"
-    );
-
-    static Map<String, String> errorCodeMappingMockBatch = Map.of(
-            "1", "[{\"error_code\":100,\"delivery_error_code\":55,\"delivery_status\":\"DELIVRD\"}]"
-    );
-
-    static Map<String, String> routingRulesMockBatch = Map.of(
-            "6", "[{\"id\":3,\"origin_network_id\":6,\"regex_source_addr\":\"\",\"regex_source_addr_ton\":\"\",\"regex_source_addr_npi\":\"\",\"regex_destination_addr\":\"\",\"regex_dest_addr_ton\":\"\",\"regex_dest_addr_npi\":\"\",\"regex_imsi_digits_mask\":\"\",\"regex_network_node_number\":\"\",\"regex_calling_party_address\":\"\",\"is_sri_response\":false,\"destination\":[{\"priority\":1,\"network_id\":7,\"dest_protocol\":\"HTTP\",\"network_type\":\"GW\"}],\"new_source_addr\":\"\",\"new_source_addr_ton\":-1,\"new_source_addr_npi\":-1,\"new_destination_addr\":\"\",\"new_dest_addr_ton\":-1,\"new_dest_addr_npi\":-1,\"add_source_addr_prefix\":\"\",\"add_dest_addr_prefix\":\"\",\"remove_source_addr_prefix\":\"\",\"remove_dest_addr_prefix\":\"\",\"new_gt_sccp_addr_mt\":\"\",\"drop_map_sri\":false,\"network_id_to_map_sri\":-1,\"network_id_to_permanent_failure\":-1,\"drop_temp_failure\":false,\"network_id_temp_failure\":-1,\"check_sri_response\":false,\"origin_protocol\":\"HTTP\",\"origin_network_type\":\"SP\",\"has_filter_rules\":false,\"has_action_rules\":false}]"
-    );
-
     @Test
-    void startManager() {
-        assertNotNull(httpClientManager);
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+    @DisplayName("HTTP start manager")
+    void startManagerWhenLoadContextThenExecutedPostConstruct() {
+        HttpClientManager spyHttpClientManager = spy(httpClientManager);
+        spyHttpClientManager.startManager();
+        verify(spyHttpClientManager).startManager();
     }
 
     @Test
-    void startManagerLoadHttpConnectionManager() {
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+    @DisplayName("Load HTTP connection")
+    void startManagerWhenLoadHttpConnectionThenCheckValues() {
+        Gateway httpGW = getHTTPGw();
+        String key = String.valueOf(httpGW.getNetworkId());
         when(appProperties.getKeyGatewayRedis()).thenReturn("gateways");
-        when(jedisCluster.hgetAll(appProperties.getKeyGatewayRedis())).thenReturn(connectionManagerMockBatch);
+        when(jedisCluster.hgetAll(appProperties.getKeyGatewayRedis())).thenReturn(Map.of(key, httpGW.toString()));
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList, errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.startManager();
 
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+        ArgumentCaptor<GatewayHttpConnection> gatewayCaptor = ArgumentCaptor.forClass(GatewayHttpConnection.class);
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(httpConnectionManagerList).put(keyCaptor.capture(), gatewayCaptor.capture());
+        GatewayHttpConnection httpConnection = gatewayCaptor.getValue();
+        assertEquals(httpGW.toString(), httpConnection.getGateway().toString());
+        assertEquals(key, keyCaptor.getValue());
     }
 
     @Test
-    void startManagerLoadHttpConnectionManager_exception() {
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+    @DisplayName("Try to load SMPP connection")
+    void startManagerWhenLoadSMPPGatewayThenDoNothing() {
+        Gateway smppGW = getSMPPGw01();
+        String key = String.valueOf(smppGW.getNetworkId());
+        when(appProperties.getKeyGatewayRedis()).thenReturn("gateways");
+        when(jedisCluster.hgetAll(appProperties.getKeyGatewayRedis())).thenReturn(Map.of(key, smppGW.toString()));
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList, errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.startManager();
+
+        verifyNoMoreInteractions(httpConnectionManagerList);
+    }
+
+    @Test
+    @DisplayName("Try to load HTTP connection")
+    void startManagerWhenLoadHttpConnectionThenDoNothing() {
         when(appProperties.getKeyGatewayRedis()).thenReturn("gateways");
         when(jedisCluster.hgetAll(appProperties.getKeyGatewayRedis())).thenThrow(new RuntimeException("Simulated Exception"));
+        httpClientManager.startManager();
 
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+        verifyNoMoreInteractions(httpConnectionManagerList);
     }
 
     @Test
-    void startManagerLoadErrorCodeMapping() {
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+    @DisplayName("Load error codes mapping")
+    void startManagerWhenLoadErrorCodeMappingThenCheckValues() {
+        String key = "1";
+        List<ErrorCodeMapping> errorCodeMappings = getErrorCodeMappingList();
         when(appProperties.getKeyErrorCodeMapping()).thenReturn("error_code_mapping");
         when(jedisCluster.hgetAll(appProperties.getKeyErrorCodeMapping()))
-                .thenReturn(errorCodeMappingMockBatch);
-
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+                .thenReturn(Map.of(key, Converter.valueAsString(errorCodeMappings)));
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList, errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.startManager();
+        ArgumentCaptor<List<ErrorCodeMapping>> listErrorCodeCaptor = getArgumentCaptureList();
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(errorCodeMappingConcurrentHashMap).put(keyCaptor.capture(), listErrorCodeCaptor.capture());
+        assertEquals(key, keyCaptor.getValue());
     }
 
     @Test
-    void startManagerLoadErrorCodeMapping_exception() {
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+    @DisplayName("Try to load error codes mapping")
+    void startManagerWhenLoadErrorCodeMappingThenDoNothing() {
         when(appProperties.getKeyErrorCodeMapping()).thenReturn("error_code_mapping");
         when(jedisCluster.hgetAll(appProperties.getKeyErrorCodeMapping())).thenThrow(new RuntimeException("Simulated Exception"));
-
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+        httpClientManager.startManager();
+        verifyNoMoreInteractions(errorCodeMappingConcurrentHashMap);
     }
 
     @Test
-    void startManagerLoadRoutingRules() {
-        assertDoesNotThrow(() -> httpClientManager.startManager());
-        var routingHashMapInternal = new ConcurrentHashMap<Integer, List<RoutingRule>>();
-        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
-                errorCodeMappingConcurrentHashMap, routingHashMapInternal, cdrProcessor);
-
+    @DisplayName("Load routing rules")
+    void startManagerWhenLoadRoutingRulesThenCheckValues() {
+        String key = "6";
+        List<RoutingRule> routingRules = getRoutingRuleList();
         when(appProperties.getKeyRoutingRules()).thenReturn("routing_rules");
-        when(jedisCluster.hgetAll(appProperties.getKeyRoutingRules()))
-                .thenReturn(routingRulesMockBatch);
-
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+        when(jedisCluster.hgetAll(appProperties.getKeyRoutingRules())).thenReturn(Map.of(key, Converter.valueAsString(routingRules)));
+        var routingHashMapInternal = new ConcurrentHashMap<Integer, List<RoutingRule>>();
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList, errorCodeMappingConcurrentHashMap, routingHashMapInternal, cdrProcessor);
+        httpClientManager.startManager();
+        assertNotNull(routingHashMapInternal.get(Integer.parseInt(key)));
+        assertEquals(routingRules.size(), routingHashMapInternal.get(Integer.parseInt(key)).size());
     }
 
     @Test
-    void startManagerLoadRoutingRules_exception() {
-        assertDoesNotThrow(() -> httpClientManager.startManager());
-
+    @DisplayName("Try to load routing rules")
+    void startManagerWhenLoadRoutingRulesThenDoNothing() {
         when(appProperties.getKeyRoutingRules()).thenReturn("routing_rules");
         when(jedisCluster.hgetAll(appProperties.getKeyRoutingRules())).thenThrow(new RuntimeException("Simulated Exception"));
-
-        assertDoesNotThrow(() -> httpClientManager.startManager());
+        httpClientManager.startManager();
+        verifyNoMoreInteractions(routingHashMap);
     }
 
     @Test
-    void updateGateway() {
-        assertDoesNotThrow(() -> httpClientManager.updateGateway("1"));
-        when(appProperties.getKeyGatewayRedis()).thenReturn("gateways");
-        when(jedisCluster.hget(appProperties.getKeyGatewayRedis(), "1")).thenReturn(connectionManagerMockBatch.get("1"));
-
-        assertDoesNotThrow(() -> httpClientManager.updateGateway("1"));
-    }
-
-    @Test
-    void updateGateway_nullStringNetworkId() {
-        assertDoesNotThrow(() -> httpClientManager.updateGateway(null));
-    }
-
-    @Test
-    void updateGateway_noGatewayInRedis() {
-        assertDoesNotThrow(() -> httpClientManager.updateGateway("1"));
+    @DisplayName("Try to update gateway and the networkId not found")
+    void updateGatewayWhenGatewayNotFoundThenDoNothing() {
         when(appProperties.getKeyGatewayRedis()).thenReturn("gateways");
         when(jedisCluster.hget(appProperties.getKeyGatewayRedis(), "1")).thenReturn(null);
+        httpClientManager.updateGateway("1");
 
-        assertDoesNotThrow(() -> httpClientManager.updateGateway("1"));
+        verifyNoMoreInteractions(httpConnectionManagerList);
     }
 
     @Test
-    void updateGateway_httpProtocol() {
-        String gatewayInRaw = connectionManagerMockBatch.get("7");
-        assertDoesNotThrow(() -> httpClientManager.updateGateway("7"));
+    @DisplayName("Try to update gateway when protocol isn't HTTP")
+    void updateGatewayWhenGatewayProtocolIsNotHTTPThenDoNothing() {
+        Gateway httpGW = getHTTPGw();
+        httpGW.setName("httpgw01");
+        httpGW.setProtocol("smpp");
         when(appProperties.getKeyGatewayRedis()).thenReturn("gateways");
-        when(jedisCluster.hget(appProperties.getKeyGatewayRedis(), "7")).thenReturn(gatewayInRaw);
+        when(jedisCluster.hget(appProperties.getKeyGatewayRedis(), String.valueOf(httpGW.getNetworkId()))).thenReturn(httpGW.toString());
 
-        assertDoesNotThrow(() -> httpClientManager.updateGateway("7"));
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
+                errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.updateGateway(String.valueOf(httpGW.getNetworkId()));
+
+        verify(httpConnectionManagerList, never()).containsKey(String.valueOf(httpGW.getNetworkId()));
     }
 
     @Test
-    void updateGateway_smppProtocol() {
-        String gatewayInRaw = connectionManagerMockBatch.get("4");
-
-        assertDoesNotThrow(() -> httpClientManager.updateGateway("4"));
+    @DisplayName("Update HTTP gateway when not in the connection manager")
+    void updateGatewayWhenGatewayProtocolNotInManagerListHTTPThenCheckValues() {
+        Gateway httpGW = getHTTPGw();
+        httpGW.setName("httpgw01");
         when(appProperties.getKeyGatewayRedis()).thenReturn("gateways");
-        when(jedisCluster.hget(appProperties.getKeyGatewayRedis(), "1")).thenReturn(gatewayInRaw);
+        when(jedisCluster.hget(appProperties.getKeyGatewayRedis(), String.valueOf(httpGW.getNetworkId()))).thenReturn(httpGW.toString());
 
-        assertDoesNotThrow(() -> httpClientManager.updateGateway("1"));
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
+                errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.updateGateway(String.valueOf(httpGW.getNetworkId()));
+
+        ArgumentCaptor<GatewayHttpConnection> gatewayCaptor = ArgumentCaptor.forClass(GatewayHttpConnection.class);
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(httpConnectionManagerList).put(keyCaptor.capture(), gatewayCaptor.capture());
+        GatewayHttpConnection httpConnection = gatewayCaptor.getValue();
+        assertEquals(httpGW.getName(), httpConnection.getGateway().getName());
+        assertEquals(String.valueOf(httpGW.getNetworkId()), keyCaptor.getValue());
     }
 
     @Test
-    void updateGateway_existingInMap() {
-        when(appProperties.getKeyGatewayRedis()).thenReturn("gateways");
-        when(jedisCluster.hget(appProperties.getKeyGatewayRedis(), "7")).thenReturn(connectionManagerMockBatch.get("7"));
+    @DisplayName("Update HTTP gateway when exist in the connection manager")
+    void updateGatewayWhenGatewayProtocolInManagerListHTTPThenCheckValues() {
+        Gateway httpGW = getHTTPGw();
+        String key = String.valueOf(httpGW.getNetworkId());
         var gatewayHttpConnection = mock(GatewayHttpConnection.class);
-        var httpConnectionManagerListInternal = new ConcurrentHashMap<String, GatewayHttpConnection>();
-        httpConnectionManagerListInternal.put("7", gatewayHttpConnection);
-        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerListInternal,
+        when(appProperties.getKeyGatewayRedis()).thenReturn("gateways");
+        when(jedisCluster.hget(appProperties.getKeyGatewayRedis(), key)).thenReturn(httpGW.toString());
+        when(httpConnectionManagerList.containsKey(key)).thenReturn(true);
+        when(httpConnectionManagerList.get(key)).thenReturn(gatewayHttpConnection);
+
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
                 errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.updateGateway(key);
 
-        assertDoesNotThrow(() -> httpClientManager.updateGateway("7"));
+        ArgumentCaptor<Gateway> gatewayCaptor = ArgumentCaptor.forClass(Gateway.class);
+        verify(gatewayHttpConnection).setGateway(gatewayCaptor.capture());
+        assertEquals(httpGW.toString(), gatewayCaptor.getValue().toString());
     }
 
     @Test
-    void connectGateway_networkIdNull() {
-        assertDoesNotThrow(() -> httpClientManager.connectGateway(null));
+    @DisplayName("Try to connect gateway when not in the connection manager")
+    void connectGatewayWhenGatewayNotInConnectionManagerThenDoNothing() {
+        String key = "7";
+        when(httpConnectionManagerList.get(key)).thenReturn(null);
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
+                errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.connectGateway(key);
+        verifyNoMoreInteractions(httpConnectionManagerList);
     }
 
     @Test
-    void connectGateway_gatewayHttpConnectionNotExist() {
-        assertDoesNotThrow(() -> httpClientManager.connectGateway("7"));
-    }
-
-    @Test
-    void connectGateway_gatewayHttpConnectionExist() {
+    @DisplayName("Connect gateway when exist in the connection manager")
+    void connectGatewayWhenGatewayInConnectionManagerThenCheckConnect() {
         var gatewayHttpConnection = mock(GatewayHttpConnection.class);
-        var httpConnectionManagerListInternal = new ConcurrentHashMap<String, GatewayHttpConnection>();
-        httpConnectionManagerListInternal.put("7", gatewayHttpConnection);
-        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerListInternal,
+        String key = "7";
+        when(httpConnectionManagerList.get(key)).thenReturn(gatewayHttpConnection);
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
                 errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
-
-        assertDoesNotThrow(() -> httpClientManager.connectGateway("7"));
+        httpClientManager.connectGateway(key);
+        ArgumentCaptor<String> networkCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> statusParamCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> statusCaptor = ArgumentCaptor.forClass(String.class);
+        verify(gatewayHttpConnection).connect();
+        verify(socketSession).sendStatus(networkCaptor.capture(), statusParamCaptor.capture(), statusCaptor.capture());
+        assertEquals(key, networkCaptor.getValue());
+        assertEquals(Constants.PARAM_UPDATE_STATUS, statusParamCaptor.getValue());
+        assertEquals("STARTED", statusCaptor.getValue());
     }
 
     @Test
-    void stopGateway_networkIdNull() {
-        assertDoesNotThrow(() -> httpClientManager.stopGateway(null));
-    }
-
-    @Test
-    void stopGateway_gatewayHttpConnectionNotExist() {
-        assertDoesNotThrow(() -> httpClientManager.stopGateway("7"));
-    }
-
-    @Test
-    void stopGateway_gatewayHttpConnectionExist() {
-        var gatewayHttpConnection = new GatewayHttpConnection(appProperties, jedisCluster, new Gateway(), new ConcurrentHashMap<>(), new ConcurrentHashMap<>(), cdrProcessor);
-        var httpConnectionManagerListInternal = new ConcurrentHashMap<String, GatewayHttpConnection>();
-        httpConnectionManagerListInternal.put("7", gatewayHttpConnection);
-        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerListInternal,
+    @DisplayName("Try to stop gateway when not in the connection manager")
+    void stopGatewayWhenGatewayNotInConnectionManagerThenDoNothing() {
+        String key = "7";
+        when(httpConnectionManagerList.get(key)).thenReturn(null);
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
                 errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
-
-        assertDoesNotThrow(() -> httpClientManager.stopGateway("7"));
+        httpClientManager.stopGateway(key);
+        verifyNoMoreInteractions(socketSession);
     }
 
     @Test
-    void deleteGateway_networkIdNull() {
-        assertDoesNotThrow(() -> httpClientManager.deleteGateway(null));
-    }
-
-    @Test
-    void deleteGateway_gatewayHttpConnectionNotExist() {
-        assertDoesNotThrow(() -> httpClientManager.deleteGateway("7"));
-    }
-
-    @Test
-    void deleteGateway_gatewayHttpConnectionExist() {
-        var gatewayHttpConnection = new GatewayHttpConnection(appProperties, jedisCluster, new Gateway(), new ConcurrentHashMap<>(), new ConcurrentHashMap<>(), cdrProcessor);
-        var httpConnectionManagerListInternal = new ConcurrentHashMap<String, GatewayHttpConnection>();
-        httpConnectionManagerListInternal.put("7", gatewayHttpConnection);
-        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerListInternal,
+    @DisplayName("Stop gateway when exist in the connection manager")
+    void stopGatewayWhenGatewayInConnectionManagerThenCheckValues() {
+        String key = "7";
+        var gatewayHttpConnection = mock(GatewayHttpConnection.class);
+        var gateway = mock(Gateway.class);
+        when(httpConnectionManagerList.get(key)).thenReturn(gatewayHttpConnection);
+        when(gatewayHttpConnection.getGateway()).thenReturn(gateway);
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
                 errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
-
-        assertDoesNotThrow(() -> httpClientManager.deleteGateway("7"));
+        httpClientManager.stopGateway(key);
+        ArgumentCaptor<String> networkCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> statusParamCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> statusCaptor = ArgumentCaptor.forClass(String.class);
+        verify(socketSession).sendStatus(networkCaptor.capture(), statusParamCaptor.capture(), statusCaptor.capture());
+        assertEquals(key, networkCaptor.getValue());
+        assertEquals(Constants.PARAM_UPDATE_STATUS, statusParamCaptor.getValue());
+        assertEquals(Constants.STOPPED, statusCaptor.getValue());
     }
 
     @Test
-    void updateErrorCodeMapping() {
-        assertDoesNotThrow(() -> httpClientManager.updateErrorCodeMapping("1"));
+    @DisplayName("Try to delete gateway when not in connection manager")
+    void deleteGatewayWhenGatewayNotInConnectionManagerThenDoNothing() {
+        String key = "7";
+        when(httpConnectionManagerList.get(key)).thenReturn(null);
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
+                errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.deleteGateway(key);
+        verifyNoMoreInteractions(httpConnectionManagerList);
+    }
+
+    @Test
+    @DisplayName("Delete gateway when exist in the connection manager")
+    void deleteGatewayWhenGatewayInConnectionManagerThenCheckValues() {
+        String key = "7";
+        var gatewayHttpConnection = mock(GatewayHttpConnection.class);
+        var gateway = mock(Gateway.class);
+        when(httpConnectionManagerList.get(key)).thenReturn(gatewayHttpConnection);
+        when(gatewayHttpConnection.getGateway()).thenReturn(gateway);
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
+                errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.deleteGateway(key);
+        verify(httpConnectionManagerList).remove(key);
+    }
+
+    @Test
+    @DisplayName("Try to update error code mapping when raw is null")
+    void updateErrorCodeMappingWhenRawIsNullThenDoNothing() {
+        String key = "1";
         when(appProperties.getKeyErrorCodeMapping()).thenReturn("error_code_mapping");
-        when(jedisCluster.hget(appProperties.getKeyErrorCodeMapping(), "1")).thenReturn(errorCodeMappingMockBatch.get("1"));
-
-        assertDoesNotThrow(() -> httpClientManager.updateErrorCodeMapping("1"));
+        when(jedisCluster.hget(appProperties.getKeyErrorCodeMapping(), key)).thenReturn(null);
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
+                errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.updateErrorCodeMapping(key);
+        verify(errorCodeMappingConcurrentHashMap).remove(key);
+        assertEquals(0, errorCodeMappingConcurrentHashMap.size());
     }
 
     @Test
-    void updateErrorCodeMapping_MnoIdNull() {
-        assertDoesNotThrow(() -> httpClientManager.updateErrorCodeMapping(null));
-        assertDoesNotThrow(() -> httpClientManager.updateErrorCodeMapping(""));
+    @DisplayName("Update error code mapping when exist in redis")
+    void updateErrorCodeMappingWhenInRedisThenCheckUpdate() {
+        String key = "1";
+        List<ErrorCodeMapping> errorCodeMappings = getErrorCodeMappingList();
+        when(appProperties.getKeyErrorCodeMapping()).thenReturn("error_code_mapping");
+        when(jedisCluster.hget(appProperties.getKeyErrorCodeMapping(), key)).thenReturn(Converter.valueAsString(errorCodeMappings));
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
+                errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.updateErrorCodeMapping(key);
+        ArgumentCaptor<String> mnoCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<List<ErrorCodeMapping>> listArgumentCaptor = getArgumentCaptureList();
+        verify(errorCodeMappingConcurrentHashMap).put(mnoCaptor.capture(), listArgumentCaptor.capture());
+        assertEquals(key, mnoCaptor.getValue());
+        assertEquals(errorCodeMappings.size(), listArgumentCaptor.getValue().size());
     }
 
     @Test
-    void updateRoutingRules() {
+    @DisplayName("Update error code mapping when the mno is empty")
+    void updateErrorCodeMappingWhenMnoIdIsEmptyThenDoNothing() {
+        httpClientManager.updateErrorCodeMapping("");
+        verifyNoMoreInteractions(jedisCluster);
+    }
+
+    @Test
+    @DisplayName("Update routing rules when exist in redis")
+    void updateRoutingRulesWhenExistInRedisThenCheckValues() {
+        String key = "6";
+        List<RoutingRule> routingRules = getRoutingRuleList();
         when(appProperties.getKeyRoutingRules()).thenReturn("routing_rules");
-        when(jedisCluster.hget(appProperties.getKeyRoutingRules(), "6")).thenReturn(routingRulesMockBatch.get("6"));
+        when(jedisCluster.hget(appProperties.getKeyRoutingRules(), key)).thenReturn(Converter.valueAsString(routingRules));
+        httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
+                errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.updateRoutingRules(key);
 
-        assertDoesNotThrow(() -> httpClientManager.updateRoutingRules("6"));
+        ArgumentCaptor<Integer> keyCaptor = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<List<RoutingRule>> listArgumentCaptor = getArgumentCaptureList();
+        verify(routingHashMap).put(keyCaptor.capture(), listArgumentCaptor.capture());
+        assertEquals(Integer.parseInt(key), keyCaptor.getValue());
+        assertEquals(routingRules.size(), listArgumentCaptor.getValue().size());
     }
 
     @Test
-    void updateRoutingRules_GettingNull() {
+    @DisplayName("Update routing rules when getting is null")
+    void updateRoutingRulesWhenGettingIsNullThenDoNothing() {
         when(appProperties.getKeyRoutingRules()).thenReturn("routing_rules");
         when(jedisCluster.hget(appProperties.getKeyRoutingRules(), "1")).thenReturn(null);
-
-        assertDoesNotThrow(() -> httpClientManager.updateRoutingRules("1"));
+        httpClientManager.updateRoutingRules("1");
+        verifyNoMoreInteractions(routingHashMap);
     }
 
     @Test
-    void deleteRoutingRules() {
-        var routingHashMapInternal = new ConcurrentHashMap<Integer, List<RoutingRule>>();
-        routingHashMapInternal.put(6, List.of(new RoutingRule()));
+    @DisplayName("Delete routing rules when exists in redis")
+    void deleteRoutingRulesWhenExistInRedisThenCheckDelete() {
+        String key = "6";
         httpClientManager = new HttpClientManager(jedisCluster, appProperties, socketSession, httpConnectionManagerList,
-                errorCodeMappingConcurrentHashMap, routingHashMapInternal, cdrProcessor);
+                errorCodeMappingConcurrentHashMap, routingHashMap, cdrProcessor);
+        httpClientManager.deleteRoutingRules(key);
 
-        assertDoesNotThrow(() -> httpClientManager.deleteRoutingRules("6"));
+        ArgumentCaptor<Integer> keyCaptor = ArgumentCaptor.forClass(Integer.class);
+        verify(routingHashMap).remove(keyCaptor.capture());
+        assertEquals(Integer.parseInt(key), keyCaptor.getValue());
     }
 
-    @Test
-    void deleteRoutingRules_NullParam() {
-        assertDoesNotThrow(() -> httpClientManager.deleteRoutingRules(null));
-        assertDoesNotThrow(() -> httpClientManager.deleteRoutingRules(""));
+    private static Gateway getHTTPGw() {
+        return Gateway.builder()
+                .networkId(7)
+                .name("httpgw")
+                .systemId("httpgw")
+                .password("1234")
+                .ip("192.168.100.18")
+                .port(9409)
+                .bindType("TRANSCEIVER")
+                .systemType("")
+                .interfaceVersion("IF_50")
+                .sessionsNumber(1)
+                .addressTON(1)
+                .addressNPI(4)
+                .addressRange("")
+                .tps(1)
+                .status("STARTED")
+                .enabled(1)
+                .enquireLinkPeriod(30000)
+                .enquireLinkTimeout(0)
+                .requestDLR(RequestDelivery.NON_REQUEST_DLR.getValue())
+                .noRetryErrorCode("")
+                .retryAlternateDestinationErrorCode("")
+                .bindTimeout(5000)
+                .bindRetryPeriod(10000)
+                .pduTimeout(5000)
+                .pduProcessorDegree(1)
+                .threadPoolSize(100)
+                .mno(1)
+                .tlvMessageReceiptId(false)
+                .sessionsNumber(0)
+                .protocol("HTTP")
+                .autoRetryErrorCode("")
+                .encodingIso88591(3)
+                .encodingGsm7(1)
+                .encodingUcs2(2)
+                .splitMessage(false)
+                .splitSmppType("TLV")
+                .build();
+    }
+
+    private static Gateway getSMPPGw01() {
+        return Gateway.builder()
+                .name("Receiver")
+                .password("1234")
+                .ip("192.168.100.18")
+                .port(2778)
+                .tps(1)
+                .networkId(4)
+                .systemId("gw1")
+                .bindType("RECEIVER")
+                .systemType("")
+                .interfaceVersion("IF_50")
+                .sessionsNumber(1)
+                .addressTON(1)
+                .addressNPI(4)
+                .addressRange("")
+                .enabled(0)
+                .enquireLinkPeriod(30000)
+                .requestDLR(RequestDelivery.REQUEST_DLR.getValue())
+                .noRetryErrorCode("")
+                .retryAlternateDestinationErrorCode("")
+                .bindTimeout(5000)
+                .bindRetryPeriod(10000)
+                .pduTimeout(5000)
+                .pduProcessorDegree(1)
+                .threadPoolSize(100)
+                .mno(1)
+                .status("BOUND")
+                .enquireLinkTimeout(0)
+                .tlvMessageReceiptId(false)
+                .messageIdDecimalFormat(false)
+                .protocol("SMPP")
+                .autoRetryErrorCode("")
+                .encodingIso88591(3)
+                .encodingGsm7(0)
+                .encodingUcs2(2)
+                .splitMessage(false)
+                .splitSmppType("TLV")
+                .build();
+    }
+
+    private static List<ErrorCodeMapping> getErrorCodeMappingList() {
+        return List.of(ErrorCodeMapping.builder().errorCode(100).deliveryErrorCode(55).deliveryStatus("DELIVRD").build());
+    }
+
+    private static List<RoutingRule> getRoutingRuleList() {
+        RoutingRule.Destination destination = new RoutingRule.Destination();
+        destination.setPriority(1);
+        destination.setNetworkId(6);
+        destination.setProtocol("HTTP");
+        destination.setNetworkType("GW");
+        return List.of(
+                RoutingRule.builder()
+                        .id(3)
+                        .originNetworkId(6)
+                        .sriResponse(false)
+                        .destination(List.of(destination))
+                        .newSourceAddrTon(-1)
+                        .newSourceAddrNpi(-1)
+                        .newDestAddrTon(-1)
+                        .newDestAddrNpi(-1)
+                        .dropMapSri(false)
+                        .networkIdToMapSri(-1)
+                        .networkIdToPermanentFailure(-1)
+                        .dropTempFailure(false)
+                        .networkIdTempFailure(-1)
+                        .checkSriResponse(false)
+                        .originProtocol("HTTP")
+                        .originNetworkType("SP")
+                        .hasFilterRules(false)
+                        .hasActionRules(false)
+                        .build()
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <U> ArgumentCaptor<U> getArgumentCaptureList() {
+        return (ArgumentCaptor<U>) ArgumentCaptor.forClass(List.class);
     }
 }

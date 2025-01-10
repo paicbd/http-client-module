@@ -27,8 +27,13 @@ public class BeansDefinition {
 
     @Bean
     public JedisCluster jedisCluster() {
-        return Converter.paramsToJedisCluster(getJedisClusterParams(appProperties.getRedisNodes(), appProperties.getRedisMaxTotal(),
-                appProperties.getRedisMinIdle(), appProperties.getRedisMaxIdle(), appProperties.isRedisBlockWhenExhausted()));
+        return Converter.paramsToJedisCluster(
+                new UtilsRecords.JedisConfigParams(appProperties.getRedisNodes(), appProperties.getRedisMaxTotal(),
+                        appProperties.getRedisMaxIdle(), appProperties.getRedisMinIdle(),
+                        appProperties.isRedisBlockWhenExhausted(), appProperties.getRedisConnectionTimeout(),
+                        appProperties.getRedisSoTimeout(), appProperties.getRedisMaxAttempts(),
+                        appProperties.getRedisUser(), appProperties.getRedisPassword())
+        );
     }
 
     @Bean
@@ -56,7 +61,4 @@ public class BeansDefinition {
         return new CdrProcessor(jedisCluster);
     }
 
-    private UtilsRecords.JedisConfigParams getJedisClusterParams(List<String> nodes, int maxTotal, int minIdle, int maxIdle, boolean blockWhenExhausted) {
-        return new UtilsRecords.JedisConfigParams(nodes, maxTotal, minIdle, maxIdle, blockWhenExhausted);
-    }
 }

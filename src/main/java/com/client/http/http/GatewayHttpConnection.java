@@ -103,7 +103,7 @@ public class GatewayHttpConnection {
         jedisCluster.hset(this.appProperties.getKeyGatewayRedis(), String.valueOf(gateway.getNetworkId()), this.gateway.toString());
     }
 
-    public Flux<List<String>> fetchAllItems() {
+    private Flux<List<String>> fetchAllItems() {
         int batchSize = batchPerWorker();
         if (batchSize <= 0) {
             return Flux.empty();
@@ -140,7 +140,7 @@ public class GatewayHttpConnection {
         return bpw > 0 ? bpw : 1;
     }
 
-    public void sendToRetryProcess(MessageEvent submitSmEventToRetry, int errorCode) {
+    private void sendToRetryProcess(MessageEvent submitSmEventToRetry, int errorCode) {
         log.warn("Starting retry process for submit_sm with id {} and error code {}", submitSmEventToRetry.getMessageId(), errorCode);
         if (errorContained(gateway.getNoRetryErrorCode(), errorCode)) {
             handleNoRetryError(submitSmEventToRetry, errorCode);
@@ -158,7 +158,7 @@ public class GatewayHttpConnection {
     private void handleNoRetryError(MessageEvent submitSmEventToRetry, int errorCode) {
         log.warn("Failed to retry for submit_sm with id {}. The gateway {} contains this error code for no retry", submitSmEventToRetry.getMessageId(), this.getGateway().getName());
         sendDeliverSm(submitSmEventToRetry, errorCode);
-        handlerCdrDetail(submitSmEventToRetry, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.FAILED, cdrProcessor, true, "ERROR IS DEFINED AS NO RETRY");
+        handlerCdrDetail(submitSmEventToRetry, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.FAILED, cdrProcessor, true, "ERROR " + errorCode + " IS DEFINED AS NO RETRY");
     }
 
     private void handleRetryAlternateDestination(MessageEvent submitSmEventToRetry, int errorCode) {
@@ -169,7 +169,7 @@ public class GatewayHttpConnection {
             if (Objects.nonNull(listName)) {
                 log.warn("Retry for submit_sm with id {}. new networkId {}", submitSmEventToRetry.getMessageId(), submitSmEventToRetry.getDestNetworkId());
                 jedisCluster.rpush(listName, submitSmEventToRetry.toString());
-                handlerCdrDetail(submitSmEventToRetry, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.FAILED, cdrProcessor, true, "MESSAGE HAS BEEN SENT TO ALTERNATIVE ROUTE");
+                handlerCdrDetail(submitSmEventToRetry, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.FAILED, cdrProcessor, true, "MESSAGE HAS BEEN SENT TO ALTERNATIVE ROUTE NETWORK ID " + submitSmEventToRetry.getDestNetworkId());
                 return;
             }
             log.warn("Failed to retry for submit_sm with id {}. No more alternative routes were found", submitSmEventToRetry.getMessageId());
@@ -227,12 +227,12 @@ public class GatewayHttpConnection {
         };
     }
 
-    public void handlingErrorOnSendMessage(MessageEvent submitSmEvent, int errorCode, String message) {
+    private void handlingErrorOnSendMessage(MessageEvent submitSmEvent, int errorCode, String message) {
         handlerCdrDetail(submitSmEvent, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.FAILED, cdrProcessor, true, message);
         sendDeliverSm(submitSmEvent, errorCode);
     }
 
-    public boolean errorContained(String stringList, int errorCode) {
+    private boolean errorContained(String stringList, int errorCode) {
         return Arrays.stream(stringList.split(","))
                 .map(String::trim)
                 .anyMatch(code -> code.equals(String.valueOf(errorCode)));
@@ -309,7 +309,6 @@ public class GatewayHttpConnection {
         deliverSmEvent.setSmDefaultMsgId(submitSmEventToRetry.getSmDefaultMsgId());
         deliverSmEvent.setCheckSubmitSmResponse(false);
         deliverSmEvent.setDeliverSmServerId(submitSmEventToRetry.getMessageId());
-        deliverSmEvent.setMessageId(submitSmEventToRetry.getMessageId());
         String dlrMessage = delRec.toString();
         deliverSmEvent.setShortMessage(dlrMessage);
         deliverSmEvent.setDelReceipt(dlrMessage);
@@ -324,7 +323,7 @@ public class GatewayHttpConnection {
         return deliverSmEvent;
     }
 
-    public void sendSubmitSmList(List<String> events) {
+    private void sendSubmitSmList(List<String> events) {
         Flux.fromIterable(events)
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnNext(this::handleSubmitSm)
@@ -354,8 +353,7 @@ public class GatewayHttpConnection {
 
     private void sendMessage(MessageEvent submitSmEvent) {
         var requestBody = messageEventToRequest(submitSmEvent);
-        if (requestBody == null)
-            return;
+        Objects.requireNonNull(requestBody);
 
         HttpRequest request = newRequest(requestBody);
         try {
@@ -371,13 +369,13 @@ public class GatewayHttpConnection {
             globalErrorHandler(submitSmEvent, 408);
         } catch (IOException | InterruptedException e) {
             log.error("An exception occurred trying to send http request -> {}", e.getMessage());
-            handlerCdrDetail(submitSmEvent, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.FAILED, cdrProcessor, true, "AN EXCEPTION OCCURRED TRYING TO SEND HTTP REQUEST");
+            handlerCdrDetail(submitSmEvent, UtilsEnum.MessageType.MESSAGE, UtilsEnum.CdrStatus.FAILED, cdrProcessor, true, "AN EXCEPTION OCCURRED TRYING TO SEND HTTP REQUEST: + " + e.getMessage());
             sendDeliverSm(submitSmEvent, 500);
             Thread.currentThread().interrupt();
         }
     }
 
-    public void globalErrorHandler(MessageEvent submitSmEvent, int errorCode) {
+    private void globalErrorHandler(MessageEvent submitSmEvent, int errorCode) {
         if (submitSmEvent.getValidityPeriod() == 0) {
             log.debug("The validity period for submit_sm with id {} is 0, the message will be sent to DLR", submitSmEvent.getMessageId());
             handlingErrorOnSendMessage(submitSmEvent, errorCode, "VALIDITY PERIOD IS 0");
