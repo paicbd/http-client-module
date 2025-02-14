@@ -49,7 +49,7 @@ public class GlobalRecords {
             @JsonProperty("short_message") String shortMessage,
             @JsonProperty("optional_parameters") List<UtilsRecords.OptionalParameter> optionalParameters,
             @JsonProperty("custom_parameters")
-            Map<String, String> customParams
+            Map<String, Object> customParams
     ) {
 
         @Override
