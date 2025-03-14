@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+		 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<groupId>org.springframework.boot</groupId>
@@ -55,7 +55,7 @@
 		<java.version>21</java.version>
 
 		<!-- Dependency versions -->
-		<smsc-utils.version>2.0.0-16</smsc-utils.version>
+		<smsc-utils.version>2.0.0-18</smsc-utils.version>
 		<jsmpp.version>3.1.5</jsmpp.version>
 		<redis.clients.version>5.0.2</redis.clients.version>
 		<org.jooq.version>3.15.1</org.jooq.version>
